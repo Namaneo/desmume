@@ -44,7 +44,7 @@ static unsigned char co_swap_function[] = {
 #ifdef _WIN32
 #include <windows.h>
 
-void co_init(void)
+static void co_init(void)
 {
    DWORD old_privileges;
    VirtualProtect(co_swap_function,
@@ -54,7 +54,7 @@ void co_init(void)
 #include <unistd.h>
 #include <sys/mman.h>
 
-void co_init(void)
+static void co_init(void)
 {
    unsigned long addr = (unsigned long)co_swap_function;
    unsigned long base = addr - (addr % sysconf(_SC_PAGESIZE));
@@ -70,7 +70,7 @@ static void crash(void)
 
 cothread_t co_active(void)
 {
-   if(!co_active_handle)
+   if (!co_active_handle)
       co_active_handle = &co_active_buffer;
    return co_active_handle;
 }
@@ -78,24 +78,24 @@ cothread_t co_active(void)
 cothread_t co_create(unsigned int size, void (*entrypoint)(void))
 {
    cothread_t handle;
-   if(!co_swap)
+   if (!co_swap)
    {
       co_init();
       co_swap = (void (fastcall*)(cothread_t, cothread_t))co_swap_function;
    }
 
-   if(!co_active_handle)
+   if (!co_active_handle)
       co_active_handle = &co_active_buffer;
 
    size += 256; /* allocate additional space for storage */
    size &= ~15; /* align stack to 16-byte boundary */
 
-   if((handle = (cothread_t)malloc(size)))
+   if ((handle = (cothread_t)malloc(size)))
    {
-      long *p = (long*)((char*)handle + size); /* seek to top of stack */
-      *--p = (long)crash;                      /* crash if entrypoint returns */
-      *--p = (long)entrypoint;                 /* start of function */
-      *(long*)handle = (long)p;                /* stack pointer */
+      long *p        = (long*)((char*)handle + size); /* seek to top of stack */
+      *--p           = (long)crash;                   /* crash if entrypoint returns */
+      *--p           = (long)entrypoint;              /* start of function */
+      *(long*)handle = (long)p;                       /* stack pointer */
    }
 
    return handle;

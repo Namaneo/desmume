@@ -21,7 +21,13 @@
 #define _SRAM_H
 
 #include "types.h"
+#ifdef HAVE_ZLIB
 #include "zlib.h"
+#else
+#define Z_OK 0
+#define Z_NO_COMPRESSION 0
+#define Z_DEFAULT_COMPRESSION -1
+#endif
 
 #define NB_STATES 10
 

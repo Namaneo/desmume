@@ -25,6 +25,7 @@
 
 #include <stdio.h>
 #include "types.h"
+#include "streams/file_stream_transforms.h"
 
 #include <deque>
 #include <string>

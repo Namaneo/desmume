@@ -191,7 +191,32 @@ void PathInfo::init(const char *filename)
 
 void PathInfo::LoadModulePath()
 {
-#if defined(HOST_WINDOWS)
+#if defined(__LIBRETRO__)
+		const char *saveDir = 0;
+		environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &saveDir);
+#if !defined(VITA)
+		strncpy(pathToModule, saveDir ? saveDir : ".", MAX_PATH);
+#else
+		strncpy(pathToModule, saveDir ? saveDir : "", MAX_PATH);
+#endif
+		if(saveDir == 0 && log_cb)
+		{
+			log_cb(RETRO_LOG_WARN, "Save directory is not defined. Fallback on using SYSTEM directory ...\n");
+
+		const char* systemDir = 0;
+		environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &systemDir);
+#if !defined(VITA)
+		strncpy(pathToModule, systemDir ? systemDir : ".", MAX_PATH);
+#else
+		strncpy(pathToModule, systemDir ? systemDir : "", MAX_PATH);
+#endif
+		if(systemDir == 0 && log_cb)
+			log_cb(RETRO_LOG_WARN, "System directory is not defined. Fallback to ROM dir\n");
+
+		}
+
+		return;
+#elif defined(HOST_WINDOWS)
 
 	wchar_t *p;
 	ZeroMemory(pathToModule, sizeof(pathToModule));

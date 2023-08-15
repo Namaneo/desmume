@@ -208,7 +208,7 @@ bool FS_NITRO::loadFileTables()
 	if (!store) return false;
 	memset(store, 0, sizeof(u32) * numDirs);
 
-	fnt[0].filename = path_default_slash();
+	fnt[0].filename = PATH_DEFAULT_SLASH();
 	fnt[0].parentID = 0xF000;
 
 	//printf("FNT F000: Sub:%08Xh, 1st ID:%04xh, parentID:%04Xh <%s>\n", fnt[0].offset, fnt[0].firstID, fnt[0].parentID, fnt[0].filename);
@@ -437,16 +437,16 @@ std::string FS_NITRO::getFullPathByFileID(u16 id, bool addRoot)
 		u32 parentID = (fat[id].parentID & 0x0FFF);
 		while (parentID)
 		{
-			res = fnt[parentID].filename + path_default_slash() + res;
+			res = fnt[parentID].filename + PATH_DEFAULT_SLASH() + res;
 			parentID = (fnt[parentID].parentID & 0x0FFF);
 		}
 		if (addRoot)
-			res = (std::string)path_default_slash() + "data" + path_default_slash() + res;
+			res = (std::string)PATH_DEFAULT_SLASH() + "data" + PATH_DEFAULT_SLASH() + res;
 	}
 	else
 	{
 		if (addRoot)
-			res = (std::string)path_default_slash() + "overlay" + path_default_slash();
+			res = (std::string)PATH_DEFAULT_SLASH() + "overlay" + PATH_DEFAULT_SLASH();
 	}
 
 	res += fat[id].filename;
@@ -509,7 +509,7 @@ bool FS_NITRO::extractFile(u16 id, std::string to)
 	if (!inited) return false;
 	if (id > numFiles) return false;
 
-	extract(id, (to + path_default_slash() + fat[id].filename));
+	extract(id, (to + PATH_DEFAULT_SLASH() + fat[id].filename));
 
 	return true;
 }
@@ -518,8 +518,8 @@ bool FS_NITRO::extractAll(std::string to, void (*callback)(u32 current, u32 num)
 {
 	if (!inited) return false;
 
-	std::string dataDir = to + "data" + path_default_slash();
-	std::string overlayDir = to + "overlay" + path_default_slash();
+	std::string dataDir = to + "data" + PATH_DEFAULT_SLASH();
+	std::string overlayDir = to + "overlay" + PATH_DEFAULT_SLASH();
 	path_mkdir(dataDir.c_str());
 	path_mkdir(overlayDir.c_str());
 
@@ -530,18 +530,18 @@ bool FS_NITRO::extractAll(std::string to, void (*callback)(u32 current, u32 num)
 
 		while (parent)
 		{
-			tmp = fnt[parent].filename + path_default_slash() + tmp;
+			tmp = fnt[parent].filename + PATH_DEFAULT_SLASH() + tmp;
 			parent = (fnt[parent].parentID) & 0x0FFF;
 		}
 
-		path_mkdir((dataDir + path_default_slash() + tmp).c_str());
+		path_mkdir((dataDir + PATH_DEFAULT_SLASH() + tmp).c_str());
 	}
 
 	for (u32 i = 0; i < numFiles; i++)
 	{
 		if (fat[i].isOverlay) continue;
 		std::string fname = getFullPathByFileID(i, false);
-		extract(i, (dataDir + path_default_slash() + fname));
+		extract(i, (dataDir + PATH_DEFAULT_SLASH() + fname));
 		if (callback)
 			callback(i, numFiles);
 	}
@@ -549,7 +549,7 @@ bool FS_NITRO::extractAll(std::string to, void (*callback)(u32 current, u32 num)
 	for (u32 i = 0; i < numFiles; i++)
 	{
 		if (!fat[i].isOverlay) continue;
-		extract(i, (overlayDir + path_default_slash() + fat[i].filename));
+		extract(i, (overlayDir + PATH_DEFAULT_SLASH() + fat[i].filename));
 	}
 
 	return true;

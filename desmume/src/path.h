@@ -20,7 +20,13 @@
 #include <string.h>
 #include "types.h"
 
-#if defined(HOST_WINDOWS)
+#if defined(__LIBRETRO__)
+	#include <file/file_path.h>
+
+	extern retro_log_printf_t log_cb;
+	extern retro_environment_t environ_cb;
+
+#elif defined(HOST_WINDOWS)
 	#define WIN32_LEAN_AND_MEAN
 	#include <windows.h>
 	#include <direct.h>

@@ -36,6 +36,7 @@ THE SOFTWARE.
 #include <stdarg.h>
 
 #include "types.h"
+#include "streams/file_stream_transforms.h"
 
 #ifdef HOST_WINDOWS 
 #include <io.h>
@@ -312,7 +313,7 @@ public:
 
 	virtual ~EMUFILE_FILE() {
 		if (NULL != this->_fp)
-			fclose(this->_fp);
+			::rfclose(this->_fp);
 	}
 
 	virtual FILE *get_fp() {
@@ -327,25 +328,27 @@ public:
 
 	virtual void truncate(s32 length);
 
-	virtual bool eof() { return !!::feof(this->_fp); }
+	virtual bool eof() { return !!::rfeof(this->_fp); }
 
 	virtual int fprintf(const char *format, ...) {
 		va_list argptr;
 		va_start(argptr, format);
-		int ret = ::vfprintf(this->_fp, format, argptr);
+		static char buffer[1024];
+		int string_len = ::vsprintf(buffer, format, argptr);
+		int ret = ::rfwrite(buffer, sizeof(char), string_len, this->_fp);
 		va_end(argptr);
 		return ret;
 	};
 
 	virtual int fgetc() {
-		return ::fgetc(this->_fp);
+		return ::rfgetc(this->_fp);
 	}
 	virtual int fputc(int c) {
-		return ::fputc(c, this->_fp);
+		return ::rfputc(c, this->_fp);
 	}
 
 	virtual char* fgets(char* str, int num) {
-		return ::fgets(str, num, this->_fp);
+		return ::rfgets(str, num, this->_fp);
 	}
 
 	virtual size_t _fread(const void *ptr, size_t bytes);
@@ -364,7 +367,7 @@ public:
 	}
 
 	virtual void fflush() {
-		::fflush(this->_fp);
+		::rfflush(this->_fp);
 	}
 
 };

@@ -26,6 +26,7 @@
 #endif
 
 #include "utils/xstring.h"
+#include "streams/file_stream_transforms.h"
 
 #ifdef WIN32
 #define stat(...) _stat(__VA_ARGS__)
@@ -79,7 +80,7 @@ struct STDROMReaderData
 
 void* STDROMReaderInit(const char* filename)
 {
-#ifndef _MSC_VER
+#if !defined(_MSC_VER) && !defined(__EMSCRIPTEN__)
 	struct stat sb;
 	if (stat(filename, &sb) == -1)
 		return 0;
@@ -92,6 +93,7 @@ void* STDROMReaderInit(const char* filename)
 	FILE* inf = _wfopen(mbstowcs((std::string)filename).c_str(),L"rb");
 #else
 	FILE* inf = fopen(filename, "rb");
+	printf("COUCOU: %p\n", inf);
 #endif
 	
 	if(!inf) return NULL;

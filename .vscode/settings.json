@@ -1,0 +1,8 @@
+{
+	"C_Cpp.default.defines": [
+		"__LIBRETRO__"
+	],
+	"files.associations": {
+		"*makefile*": "makefile"
+	}
+}

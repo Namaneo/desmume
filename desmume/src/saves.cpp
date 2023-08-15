@@ -759,7 +759,7 @@ void loadstate_slot(int num)
 			FILE* index_file = fopen(index_fname.c_str(), "r+"); // Read/update but don't create
 			if (index_file) {
 				fscanf(index_file, "%d", &cur_index);
-				rewind(index_file); // prepare to overwrite
+				fseek(index_file, 0, SEEK_SET); // prepare to overwrite
 			}
 			else
 			{
@@ -1069,6 +1069,7 @@ bool savestate_save(EMUFILE &outstream, int compressionLevel)
 
 	//compress the data
 	int error = Z_OK;
+#ifdef HAVE_LIBZ
 	if (compressionLevel != Z_NO_COMPRESSION)
 	{
 		cbuf = ms.buf();
@@ -1082,7 +1083,7 @@ bool savestate_save(EMUFILE &outstream, int compressionLevel)
 		error = compress2(cbuf,&comprlen2,ms.buf(),len,compressionLevel);
 		comprlen = (u32)comprlen2;
 	}
-
+#endif
 	//dump the header
 	outstream.fseek(0,SEEK_SET);
 	outstream.fwrite(magic,16);

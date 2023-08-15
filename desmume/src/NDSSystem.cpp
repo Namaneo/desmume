@@ -21,7 +21,9 @@
 #include <stdlib.h>
 #include <algorithm>
 #include <math.h>
+#ifdef HAVE_LIBZ
 #include <zlib.h>
+#endif
 
 #include <features/features_cpu.h>
 
@@ -717,14 +719,14 @@ int NDS_LoadROM(const char *filename, const char *physicalName, const char *logi
 	u8 fROMBuffer[4096];
 	bool first = true;
 	
-	for(;;) {
-		int read = gameInfo.reader->Read(gameInfo.fROM,fROMBuffer,4096);
-		if(read == 0) break;
-		if(first && read >= 512)
-			gameInfo.crcForCheatsDb = ~crc32(0, fROMBuffer, 512);
-		first = false;
-		gameInfo.crc = crc32(gameInfo.crc, fROMBuffer, read);
-	}
+	// for(;;) {
+	// 	int read = gameInfo.reader->Read(gameInfo.fROM,fROMBuffer,4096);
+	// 	if(read == 0) break;
+	// 	if(first && read >= 512)
+	// 		gameInfo.crcForCheatsDb = ~crc32(0, fROMBuffer, 512);
+	// 	first = false;
+	// 	gameInfo.crc = crc32(gameInfo.crc, fROMBuffer, read);
+	// }
 
 	gameInfo.chipID  = 0xC2;														// The Manufacturer ID is defined by JEDEC (C2h = Macronix)
 	if (!gameInfo.isHomebrew())

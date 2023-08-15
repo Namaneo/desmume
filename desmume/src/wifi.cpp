@@ -67,7 +67,14 @@
 #define WPCAP
 #endif
 
-#include <pcap.h>
+#if defined(_WIN32) && defined(__LIBRETRO__)
+#include "frontend/windows/winpcap/pcap.h"
+#elif defined(HAVE_LIBNX) || defined(__IOS__) || defined(ANDROID) || defined(GEKKO) || defined(_3DS) || defined(__EMSCRIPTEN__)
+#define NO_PCAP
+typedef void* pcap_pkthdr;
+#else
+#include <pcap/pcap.h>
+#endif
 typedef struct pcap pcap_t;
 
 //sometimes this isnt defined
@@ -3096,6 +3103,9 @@ static const u8 SoftAP_DeauthFrame[] = {
 
 static void SoftAP_RXPacketGet_Callback(u_char* userData, const pcap_pkthdr* pktHeader, const u_char* pktData)
 {
+#if defined(NO_PCAP)
+	return;
+#else
 	const WIFI_IOREG_MAP& io = wifiHandler->GetWifiData().io;
 
 	if((userData == NULL) || (pktData == NULL) || (pktHeader == NULL))
@@ -3147,6 +3157,7 @@ static void SoftAP_RXPacketGet_Callback(u_char* userData, const pcap_pkthdr* pkt
 
 	rawPacket->writeLocation += emulatorHeader.emuPacketSize;
 	rawPacket->count++;
+#endif
 }
 
 static void* Adhoc_RXPacketGetOnThread(void* arg)
@@ -3218,47 +3229,79 @@ void DummyPCapInterface::breakloop(void* dev)
 
 int POSIXPCapInterface::findalldevs(void** alldevs, char* errbuf)
 {
+#if defined(NO_PCAP)
+	return -1;
+#else
 	return pcap_findalldevs((pcap_if_t**)alldevs, errbuf);
+#endif
 }
 
 void POSIXPCapInterface::freealldevs(void* alldevs)
 {
+#if defined(NO_PCAP)
+	return;
+#else
 	pcap_freealldevs((pcap_if_t*)alldevs);
+#endif
 }
 
 void* POSIXPCapInterface::open(const char* source, int snaplen, int flags, int readtimeout, char* errbuf)
 {
+#if defined(NO_PCAP)
+	return NULL;
+#else
 	return pcap_open_live(source, snaplen, flags, readtimeout, errbuf);
+#endif
 }
 
 void POSIXPCapInterface::close(void* dev)
 {
+#if defined(NO_PCAP)
+	return;
+#else
 	pcap_close((pcap_t*)dev);
+#endif
 }
 
 int POSIXPCapInterface::setnonblock(void* dev, int nonblock, char* errbuf)
 {
+#if defined(NO_PCAP)
+	return -1;
+#else
 	return pcap_setnonblock((pcap_t*)dev, nonblock, errbuf);
+#endif
 }
 
 int POSIXPCapInterface::sendpacket(void* dev, const void* data, int len)
 {
+#if defined(NO_PCAP)
+	return -1;
+#else
 	return pcap_sendpacket((pcap_t*)dev, (u_char*)data, len);
+#endif
 }
 
 int POSIXPCapInterface::dispatch(void* dev, int num, void* callback, void* userdata)
 {
+#if defined(NO_PCAP)
+	return -1;
+#else
 	if(callback == NULL)
 	{
 		return -1;
 	}
 
 	return pcap_dispatch((pcap_t*)dev, num, (pcap_handler)callback, (u_char*)userdata);
+#endif
 }
 
 void POSIXPCapInterface::breakloop(void* dev)
 {
+#if defined(NO_PCAP)
+	return;
+#else
 	pcap_breakloop((pcap_t*)dev);
+#endif
 }
 
 #endif
@@ -3549,6 +3592,9 @@ SoftAPCommInterface::~SoftAPCommInterface()
 
 void* SoftAPCommInterface::_GetBridgeDeviceAtIndex(int deviceIndex, char* outErrorBuf)
 {
+#if defined(NO_PCAP)
+	return NULL;
+#else
 	void* deviceList = NULL;
 	void* theDevice = NULL;
 	int result = this->_pcap->findalldevs((void**)&deviceList, outErrorBuf);
@@ -3579,6 +3625,7 @@ void* SoftAPCommInterface::_GetBridgeDeviceAtIndex(int deviceIndex, char* outErr
 	this->_pcap->freealldevs(deviceList);
 
 	return theDevice;
+#endif
 }
 
 bool SoftAPCommInterface::_IsDNSRequestToWFC(u16 ethertype, const u8* body)
@@ -4474,6 +4521,9 @@ void WifiHandler::SetEmulationLevel(WifiEmulationLevel emulationLevel)
 
 int WifiHandler::GetBridgeDeviceList(std::vector<std::string>* deviceStringList)
 {
+#if defined(NO_PCAP)
+	return -1;
+#else
 	int result = -1;
 
 	if(deviceStringList == NULL)
@@ -4504,6 +4554,7 @@ int WifiHandler::GetBridgeDeviceList(std::vector<std::string>* deviceStringList)
 	}
 
 	return deviceStringList->size();
+#endif
 }
 
 int WifiHandler::GetSelectedBridgeDeviceIndex()

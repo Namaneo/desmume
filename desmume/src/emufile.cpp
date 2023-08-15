@@ -113,7 +113,9 @@ size_t EMUFILE_MEMORY::_fread(const void *ptr, size_t bytes){
 void EMUFILE_FILE::truncate(s32 length)
 {
 	::fflush(this->_fp);
-	#ifdef HOST_WINDOWS 
+	#if defined(__LIBRETRO__)
+		// NOOP
+	#elif defined(HOST_WINDOWS) 
 		_chsize(_fileno(this->_fp),length);
 	#else
 		ftruncate(fileno(this->_fp),length);

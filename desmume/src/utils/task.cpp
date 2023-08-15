@@ -130,7 +130,7 @@ void Task::Impl::start(bool spinlock, int threadPriority, const char *name)
 	this->_isThreadRunning = true;
 	
 #if !defined(USE_WIN32_THREADS) && !defined(__APPLE__)
-	sthread_setname(this->_thread, name);
+	// sthread_setname(this->_thread, name);
 #else
 	
 #if defined(DESMUME_COCOA) && defined(MAC_OS_X_VERSION_10_6) && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_6)

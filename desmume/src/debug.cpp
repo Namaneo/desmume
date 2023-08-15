@@ -322,8 +322,8 @@ void Logger::vprintf(const char * format, va_list l, const char * file, unsigned
 	char buffer[1024];
 	char * cur = buffer;
 
-	if (flags & Logger::FILE) cur += sprintf(cur, "%s:", file);
-	if (flags & Logger::LINE) cur += sprintf(cur, "%d:", line);
+	if (flags & 2) cur += sprintf(cur, "%s:", file);
+	if (flags & 1) cur += sprintf(cur, "%d:", line);
 	if (flags) cur += sprintf(cur, " ");
 
 	::vsnprintf(cur, 1024, format, l);

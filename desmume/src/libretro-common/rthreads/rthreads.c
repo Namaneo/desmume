@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2017 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (rthreads.c).
@@ -21,8 +21,9 @@
  */
 
 #ifdef __unix__
+#ifndef __sun__
 #define _POSIX_C_SOURCE 199309
-#define _GNU_SOURCE
+#endif
 #endif
 
 #include <stdlib.h>
@@ -46,18 +47,16 @@
 #include <mmsystem.h>
 #endif
 #elif defined(GEKKO)
+#include <ogc/lwp_watchdog.h>
 #include "gx_pthread.h"
-#elif defined(PSP)
-#include "psp_pthread.h"
-#elif defined(__CELLOS_LV2__)
-#include <pthread.h>
-#include <sys/sys_time.h>
+#elif defined(_3DS)
+#include "ctr_pthread.h"
 #else
 #include <pthread.h>
 #include <time.h>
 #endif
 
-#if defined(VITA) || defined(BSD)
+#if defined(VITA) || defined(BSD) || defined(ORBIS) || defined(__mips__) || defined(_3DS)
 #include <sys/time.h>
 #endif
 
@@ -76,7 +75,7 @@ struct sthread
 {
 #ifdef USE_WIN32_THREADS
    HANDLE thread;
-   DWORD thread_id;
+   DWORD id;
 #else
    pthread_t id;
 #endif
@@ -94,21 +93,21 @@ struct slock
 #ifdef USE_WIN32_THREADS
 /* The syntax we'll use is mind-bending unless we use a struct. Plus, we might want to store more info later */
 /* This will be used as a linked list immplementing a queue of waiting threads */
-struct QueueEntry
+struct queue_entry
 {
-   struct QueueEntry *next;
+   struct queue_entry *next;
 };
 #endif
 
 struct scond
 {
 #ifdef USE_WIN32_THREADS
-   /* With this implementation of scond, we don't have any way of waking 
+   /* With this implementation of scond, we don't have any way of waking
     * (or even identifying) specific threads
     * But we need to wake them in the order indicated by the queue.
-    * This potato token will get get passed around every waiter. 
+    * This potato token will get get passed around every waiter.
     * The bearer can test whether he's next, and hold onto the potato if he is.
-    * When he's done he can then put it back into play to progress 
+    * When he's done he can then put it back into play to progress
     * the queue further */
    HANDLE hot_potato;
 
@@ -116,12 +115,12 @@ struct scond
    HANDLE event;
 
    /* the head of the queue; NULL if queue is empty */
-   struct QueueEntry *head;
+   struct queue_entry *head;
 
    /* equivalent to the queue length */
    int waiters;
 
-   /* how many waiters in the queue have been conceptually wakened by signals 
+   /* how many waiters in the queue have been conceptually wakened by signals
     * (even if we haven't managed to actually wake them yet) */
    int wakens;
 
@@ -153,8 +152,7 @@ static void *thread_wrap(void *data_)
  * @userdata                : pointer to userdata that will be made
  *                            available in thread entry callback function
  *
- * Create a new thread using the operating system's default thread
- * priority.
+ * Create a new thread.
  *
  * Returns: pointer to new thread if successful, otherwise NULL.
  */
@@ -162,6 +160,11 @@ sthread_t *sthread_create(void (*thread_func)(void*), void *userdata)
 {
 	return sthread_create_with_priority(thread_func, userdata, 0);
 }
+
+/* TODO/FIXME - this needs to be implemented for Switch/3DS */
+#if !defined(SWITCH) && !defined(USE_WIN32_THREADS) && !defined(_3DS) && !defined(GEKKO) && !defined(__HAIKU__) && !defined(EMSCRIPTEN)
+#define HAVE_THREAD_ATTR
+#endif
 
 /**
  * sthread_create_with_priority:
@@ -180,63 +183,71 @@ sthread_t *sthread_create(void (*thread_func)(void*), void *userdata)
  */
 sthread_t *sthread_create_with_priority(void (*thread_func)(void*), void *userdata, int thread_priority)
 {
-   bool thread_created      = false;
+#ifdef HAVE_THREAD_ATTR
+   pthread_attr_t thread_attr;
    bool thread_attr_needed  = false;
+#endif
+   bool thread_created      = false;
    struct thread_data *data = NULL;
-   sthread_t *thread        = (sthread_t*)calloc(1, sizeof(*thread));
+   sthread_t *thread        = (sthread_t*)malloc(sizeof(*thread));
+
    if (!thread)
       return NULL;
 
-   data                     = (struct thread_data*)calloc(1, sizeof(*data));
-   if (!data)
-      goto error;
+   if (!(data = (struct thread_data*)malloc(sizeof(*data))))
+   {
+      free(thread);
+      return NULL;
+   }
 
-   data->func = thread_func;
-   data->userdata = userdata;
+   data->func               = thread_func;
+   data->userdata           = userdata;
 
+   thread->id               = 0;
 #ifdef USE_WIN32_THREADS
-   thread->thread = CreateThread(NULL, 0, thread_wrap, data, 0, &thread->thread_id);
-   thread_created = !!thread->thread;
+   thread->thread           = CreateThread(NULL, 0, thread_wrap,
+         data, 0, &thread->id);
+   thread_created           = !!thread->thread;
 #else
-   pthread_attr_t thread_attr;
+#ifdef HAVE_THREAD_ATTR
    pthread_attr_init(&thread_attr);
-	
-   if ( (thread_priority >= 1) && (thread_priority <= 100) )
+
+   if ((thread_priority >= 1) && (thread_priority <= 100))
    {
       struct sched_param sp;
       memset(&sp, 0, sizeof(struct sched_param));
       sp.sched_priority = thread_priority;
       pthread_attr_setschedpolicy(&thread_attr, SCHED_RR);
       pthread_attr_setschedparam(&thread_attr, &sp);
-	   
+
       thread_attr_needed = true;
    }
-	
+
 #if defined(VITA)
    pthread_attr_setstacksize(&thread_attr , 0x10000 );
    thread_attr_needed = true;
+#elif defined(__APPLE__)
+   /* Default stack size on Apple is 512Kb; 
+    * for PS2 disc scanning and other reasons, we'd like 2MB. */
+   pthread_attr_setstacksize(&thread_attr , 0x200000 );
+   thread_attr_needed = true;
 #endif
-   
+
    if (thread_attr_needed)
-   {
       thread_created = pthread_create(&thread->id, &thread_attr, thread_wrap, data) == 0;
-   }
    else
-   {
       thread_created = pthread_create(&thread->id, NULL, thread_wrap, data) == 0;
-   }
-	
+
    pthread_attr_destroy(&thread_attr);
+#else
+   thread_created    = pthread_create(&thread->id, NULL, thread_wrap, data) == 0;
 #endif
 
-   if (!thread_created)
-      goto error;
+#endif
 
-   return thread;
-
-error:
-   if (data)
-      free(data);
+   if (thread_created)
+      return thread;
+   free(data);
    free(thread);
    return NULL;
 }
@@ -259,7 +270,9 @@ int sthread_detach(sthread_t *thread)
    free(thread);
    return 0;
 #else
-   return pthread_detach(thread->id);
+   int ret = pthread_detach(thread->id);
+   free(thread);
+   return ret;
 #endif
 }
 
@@ -271,6 +284,8 @@ int sthread_detach(sthread_t *thread)
  * @thread to terminate. If that thread has already terminated, then
  * it will return immediately. The thread specified by @thread must
  * be joinable.
+ *
+ * Returns: 0 on success, otherwise it returns a non-zero error number.
  */
 void sthread_join(sthread_t *thread)
 {
@@ -285,6 +300,7 @@ void sthread_join(sthread_t *thread)
    free(thread);
 }
 
+#if !defined(GEKKO)
 /**
  * sthread_isself:
  * @thread                  : pointer to thread object
@@ -293,39 +309,13 @@ void sthread_join(sthread_t *thread)
  */
 bool sthread_isself(sthread_t *thread)
 {
-  /* This thread can't possibly be a null thread */
-  if (!thread) return false;
-
 #ifdef USE_WIN32_THREADS
-   return GetCurrentThreadId() == thread->thread_id;
+   return thread ? GetCurrentThreadId() == thread->id        : false;
 #else
-   return pthread_equal(pthread_self(),thread->id);
+   return thread ? pthread_equal(pthread_self(), thread->id) : false;
 #endif
 }
-
-/**
- * sthread_set_name:
- * @thread                  : pointer to thread object
- * @name                    : name to define for the thread (at most
- *                            15 bytes)
- *
- * Set the thread name, useful for debugging.
- */
-void sthread_setname(sthread_t *thread, const char *name)
-{
-   if (!thread)
-      return;
-   // TODO: implement that for Windows too.
-   // This can't be implemented on Apple OSes because pthread_setname_np() works
-   // substantially different. Not only does pthread_setname_np() take only the
-   // 'name' parameter, but it can only change the thread name on the current
-   // thread, when standard pthread_setname_np() can set the thread name from
-   // any thread. At the time of this writing (2021/08/30), there is no way to
-   // set the thread name from a different thread when running an Apple OS.
-#if !defined(USE_WIN32_THREADS) && !defined(__APPLE__)
-   pthread_setname_np(thread->id, name);
 #endif
-}
 
 /**
  * slock_new:
@@ -337,26 +327,19 @@ void sthread_setname(sthread_t *thread, const char *name)
  **/
 slock_t *slock_new(void)
 {
-   bool mutex_created = false;
    slock_t      *lock = (slock_t*)calloc(1, sizeof(*lock));
    if (!lock)
       return NULL;
-
 #ifdef USE_WIN32_THREADS
    InitializeCriticalSection(&lock->lock);
-   mutex_created = true;
 #else
-   mutex_created = (pthread_mutex_init(&lock->lock, NULL) == 0);
+   if (pthread_mutex_init(&lock->lock, NULL) != 0)
+   {
+      free(lock);
+      return NULL;
+   }
 #endif
-
-   if (!mutex_created)
-      goto error;
-
    return lock;
-
-error:
-   free(lock);
-   return NULL;
 }
 
 /**
@@ -398,6 +381,22 @@ void slock_lock(slock_t *lock)
 }
 
 /**
+ * slock_try_lock:
+ * @lock                    : pointer to mutex object
+ *
+ * Attempts to lock a mutex. If a mutex is already locked by
+ * another thread, return false.  If the lock is acquired, return true.
+**/
+bool slock_try_lock(slock_t *lock)
+{
+#ifdef USE_WIN32_THREADS
+   return lock && TryEnterCriticalSection(&lock->lock);
+#else
+   return lock && (pthread_mutex_trylock(&lock->lock) == 0);
+#endif
+}
+
+/**
  * slock_unlock:
  * @lock                    : pointer to mutex object
  *
@@ -431,45 +430,40 @@ scond_t *scond_new(void)
       return NULL;
 
 #ifdef USE_WIN32_THREADS
-
-   /* This is very complex because recreating condition variable semantics 
+   /* This is very complex because recreating condition variable semantics
     * with Win32 parts is not easy.
     *
-    * The main problem is that a condition variable can't be used to 
+    * The main problem is that a condition variable can't be used to
     * "pre-wake" a thread (it will get wakened only after it's waited).
     *
-    * Whereas a win32 event can pre-wake a thread (the event will be set 
-    * in advance, so a 'waiter' won't even have to wait on it). 
+    * Whereas a win32 event can pre-wake a thread (the event will be set
+    * in advance, so a 'waiter' won't even have to wait on it).
     *
-    * Keep in mind a condition variable can apparently pre-wake a thread, 
+    * Keep in mind a condition variable can apparently pre-wake a thread,
     * insofar as spurious wakeups are always possible,
     * but nobody will be expecting this and it does not need to be simulated.
     *
-    * Moreover, we won't be doing this, because it counts as a spurious wakeup 
+    * Moreover, we won't be doing this, because it counts as a spurious wakeup
     * -- someone else with a genuine claim must get wakened, in any case.
     *
     * Therefore we choose to wake only one of the correct waiting threads.
-    * So at the very least, we need to do something clever. But there's 
+    * So at the very least, we need to do something clever. But there's
     * bigger problems.
-    * We don't even have a straightforward way in win32 to satisfy 
-    * pthread_cond_wait's atomicity requirement. The bulk of this 
+    * We don't even have a straightforward way in win32 to satisfy
+    * pthread_cond_wait's atomicity requirement. The bulk of this
     * algorithm is solving that.
     *
-    * Note: We might could simplify this using vista+ condition variables, 
+    * Note: We might could simplify this using vista+ condition variables,
     * but we wanted an XP compatible solution. */
-   cond->event = CreateEvent(NULL, FALSE, FALSE, NULL);
-   if (!cond->event) goto error;
-   cond->hot_potato = CreateEvent(NULL, FALSE, FALSE, NULL);
-   if (!cond->hot_potato)
+   if (!(cond->event      = CreateEvent(NULL, FALSE, FALSE, NULL)))
+      goto error;
+   if (!(cond->hot_potato = CreateEvent(NULL, FALSE, FALSE, NULL)))
    {
       CloseHandle(cond->event);
       goto error;
    }
-   
-   InitializeCriticalSection(&cond->cs);
-   cond->waiters = cond->wakens = 0;
-   cond->head = NULL;
 
+   InitializeCriticalSection(&cond->cs);
 #else
    if (pthread_cond_init(&cond->cond, NULL) != 0)
       goto error;
@@ -506,10 +500,10 @@ void scond_free(scond_t *cond)
 #ifdef USE_WIN32_THREADS
 static bool _scond_wait_win32(scond_t *cond, slock_t *lock, DWORD dwMilliseconds)
 {
-   struct QueueEntry myentry;
-   struct QueueEntry **ptr;
+   struct queue_entry myentry;
+   struct queue_entry **ptr;
 
-#if _WIN32_WINNT >= 0x0500
+#if _WIN32_WINNT >= 0x0500 || defined(_XBOX)
    static LARGE_INTEGER performanceCounterFrequency;
    LARGE_INTEGER tsBegin;
    static bool first_init  = true;
@@ -517,19 +511,18 @@ static bool _scond_wait_win32(scond_t *cond, slock_t *lock, DWORD dwMilliseconds
    static bool beginPeriod = false;
    DWORD tsBegin;
 #endif
-
    DWORD waitResult;
-   DWORD dwFinalTimeout = dwMilliseconds; /* Careful! in case we begin in the head, 
-                                             we don't do the hot potato stuff, 
+   DWORD dwFinalTimeout = dwMilliseconds; /* Careful! in case we begin in the head,
+                                             we don't do the hot potato stuff,
                                              so this timeout needs presetting. */
 
    /* Reminder: `lock` is held before this is called. */
    /* however, someone else may have called scond_signal without the lock. soo... */
    EnterCriticalSection(&cond->cs);
 
-   /* since this library is meant for realtime game software 
+   /* since this library is meant for realtime game software
     * I have no problem setting this to 1 and forgetting about it. */
-#if _WIN32_WINNT >= 0x0500
+#if _WIN32_WINNT >= 0x0500 || defined(_XBOX)
    if (first_init)
    {
       performanceCounterFrequency.QuadPart = 0;
@@ -537,9 +530,7 @@ static bool _scond_wait_win32(scond_t *cond, slock_t *lock, DWORD dwMilliseconds
    }
 
    if (performanceCounterFrequency.QuadPart == 0)
-   {
       QueryPerformanceFrequency(&performanceCounterFrequency);
-   }
 #else
    if (!beginPeriod)
    {
@@ -551,7 +542,7 @@ static bool _scond_wait_win32(scond_t *cond, slock_t *lock, DWORD dwMilliseconds
    /* Now we can take a good timestamp for use in faking the timeout ourselves. */
    /* But don't bother unless we need to (to save a little time) */
    if (dwMilliseconds != INFINITE)
-#if _WIN32_WINNT >= 0x0500
+#if _WIN32_WINNT >= 0x0500 || defined(_XBOX)
       QueryPerformanceCounter(&tsBegin);
 #else
       tsBegin = timeGetTime();
@@ -561,35 +552,35 @@ static bool _scond_wait_win32(scond_t *cond, slock_t *lock, DWORD dwMilliseconds
    ptr = &cond->head;
 
    /* walk to the end of the linked list */
-   while (*ptr) 
-      ptr = &((*ptr)->next);
+   while (*ptr)
+      ptr       = &((*ptr)->next);
 
-   *ptr = &myentry;
+   *ptr         = &myentry;
    myentry.next = NULL;
 
    cond->waiters++;
 
    /* now the conceptual lock release and condition block are supposed to be atomic.
-    * we can't do that in Windows, but we can simulate the effects by using 
+    * we can't do that in Windows, but we can simulate the effects by using
     * the queue, by the following analysis:
     * What happens if they aren't atomic?
     *
-    * 1. a signaller can rush in and signal, expecting a waiter to get it; 
+    * 1. a signaller can rush in and signal, expecting a waiter to get it;
     * but the waiter wouldn't, because he isn't blocked yet.
     * Solution: Win32 events make this easy. The event will sit there enabled
     *
     * 2. a signaller can rush in and signal, and then turn right around and wait.
-    * Solution: the signaller will get queued behind the waiter, who's 
+    * Solution: the signaller will get queued behind the waiter, who's
     * enqueued before he releases the mutex. */
 
-   /* It's my turn if I'm the head of the queue. 
+   /* It's my turn if I'm the head of the queue.
     * Check to see if it's my turn. */
    while (cond->head != &myentry)
    {
       /* It isn't my turn: */
       DWORD timeout = INFINITE;
 
-      /* As long as someone is even going to be able to wake up 
+      /* As long as someone is even going to be able to wake up
        * when they receive the potato, keep it going round. */
       if (cond->wakens > 0)
          SetEvent(cond->hot_potato);
@@ -597,7 +588,7 @@ static bool _scond_wait_win32(scond_t *cond, slock_t *lock, DWORD dwMilliseconds
       /* Assess the remaining timeout time */
       if (dwMilliseconds != INFINITE)
       {
-#if _WIN32_WINNT >= 0x0500
+#if _WIN32_WINNT >= 0x0500 || defined(_XBOX)
          LARGE_INTEGER now;
          LONGLONG elapsed;
 
@@ -621,7 +612,7 @@ static bool _scond_wait_win32(scond_t *cond, slock_t *lock, DWORD dwMilliseconds
       LeaveCriticalSection(&lock->lock);
       LeaveCriticalSection(&cond->cs);
 
-      /* Wait a while to catch the hot potato.. 
+      /* Wait a while to catch the hot potato..
        * someone else should get a chance to go */
       /* After all, it isn't my turn (and it must be someone else's) */
       Sleep(0);
@@ -635,13 +626,13 @@ static bool _scond_wait_win32(scond_t *cond, slock_t *lock, DWORD dwMilliseconds
       {
          /* Out of time! Now, let's think about this. I do have the potato now--
           * maybe it's my turn, and I have the event?
-          * If that's the case, I could proceed right now without aborting 
+          * If that's the case, I could proceed right now without aborting
           * due to timeout.
           *
-          * However.. I DID wait a real long time. The caller was willing 
+          * However.. I DID wait a real long time. The caller was willing
           * to wait that long.
           *
-          * I choose to give him one last chance with a zero timeout 
+          * I choose to give him one last chance with a zero timeout
           * in the next step
           */
          if (cond->head == &myentry)
@@ -653,7 +644,7 @@ static bool _scond_wait_win32(scond_t *cond, slock_t *lock, DWORD dwMilliseconds
          {
             /* It's not our turn and we're out of time. Give up.
              * Remove ourself from the queue and bail. */
-            struct QueueEntry* curr = cond->head;
+            struct queue_entry *curr = cond->head;
 
             while (curr->next != &myentry)
                curr = curr->next;
@@ -665,7 +656,7 @@ static bool _scond_wait_win32(scond_t *cond, slock_t *lock, DWORD dwMilliseconds
       }
 
    }
-   
+
    /* It's my turn now -- and I hold the potato */
 
    /* I still have the main lock, in any case */
@@ -674,11 +665,11 @@ static bool _scond_wait_win32(scond_t *cond, slock_t *lock, DWORD dwMilliseconds
    LeaveCriticalSection(&cond->cs);
 
    /* Wait for someone to actually signal this condition */
-   /* We're the only waiter waiting on the event right now -- everyone else 
+   /* We're the only waiter waiting on the event right now -- everyone else
     * is waiting on something different */
    waitResult = WaitForSingleObject(cond->event, dwFinalTimeout);
 
-   /* Take the main lock so we can do work. Nobody else waits on this lock 
+   /* Take the main lock so we can do work. Nobody else waits on this lock
     * for very long, so even though it's GO TIME we won't have to wait long */
    EnterCriticalSection(&lock->lock);
    EnterCriticalSection(&cond->cs);
@@ -695,16 +686,16 @@ static bool _scond_wait_win32(scond_t *cond, slock_t *lock, DWORD dwMilliseconds
    }
 
    /* If any other wakenings are pending, go ahead and set it up  */
-   /* There may actually be no waiters. That's OK. The first waiter will come in, 
+   /* There may actually be no waiters. That's OK. The first waiter will come in,
     * find it's his turn, and immediately get the signaled event */
    cond->wakens--;
    if (cond->wakens > 0)
    {
       SetEvent(cond->event);
 
-      /* Progress the queue: Put the hot potato back into play. It'll be 
+      /* Progress the queue: Put the hot potato back into play. It'll be
        * tossed around until next in line gets it */
-      SetEvent(cond->hot_potato); 
+      SetEvent(cond->hot_potato);
    }
 
    LeaveCriticalSection(&cond->cs);
@@ -738,18 +729,17 @@ void scond_wait(scond_t *cond, slock_t *lock)
 int scond_broadcast(scond_t *cond)
 {
 #ifdef USE_WIN32_THREADS
-   /* remember: we currently have mutex */
-   if (cond->waiters == 0)
-      return 0;
-   
-   /* awaken everything which is currently queued up */
-   if (cond->wakens == 0)
-      SetEvent(cond->event);
-   cond->wakens = cond->waiters;
+   /* Remember, we currently have mutex */
+   if (cond->waiters != 0)
+   {
+      /* Awaken everything which is currently queued up */
+      if (cond->wakens == 0)
+         SetEvent(cond->event);
+      cond->wakens = cond->waiters;
 
-   /* Since there is now at least one pending waken, the potato must be in play */
-   SetEvent(cond->hot_potato); 
-
+      /* Since there is now at least one pending waken, the potato must be in play */
+      SetEvent(cond->hot_potato);
+   }
    return 0;
 #else
    return pthread_cond_broadcast(&cond->cond);
@@ -767,9 +757,9 @@ void scond_signal(scond_t *cond)
 {
 #ifdef USE_WIN32_THREADS
 
-   /* Unfortunately, pthread_cond_signal does not require that the 
+   /* Unfortunately, pthread_cond_signal does not require that the
     * lock be held in advance */
-   /* To avoid stomping on the condvar from other threads, we need 
+   /* To avoid stomping on the condvar from other threads, we need
     * to control access to it with this */
    EnterCriticalSection(&cond->cs);
 
@@ -779,7 +769,7 @@ void scond_signal(scond_t *cond)
       LeaveCriticalSection(&cond->cs);
       return;
    }
- 
+
    /* wake up the next thing in the queue */
    if (cond->wakens == 0)
       SetEvent(cond->event);
@@ -787,15 +777,15 @@ void scond_signal(scond_t *cond)
    cond->wakens++;
 
    /* The data structure is done being modified.. I think we can leave the CS now.
-    * This would prevent some other thread from receiving the hot potato and then 
+    * This would prevent some other thread from receiving the hot potato and then
     * immediately stalling for the critical section.
-    * But remember, we were trying to replicate a semantic where this entire 
+    * But remember, we were trying to replicate a semantic where this entire
     * scond_signal call was controlled (by the user) by a lock.
     * So in case there's trouble with this, we can move it after SetEvent() */
    LeaveCriticalSection(&cond->cs);
 
    /* Since there is now at least one pending waken, the potato must be in play */
-   SetEvent(cond->hot_potato); 
+   SetEvent(cond->hot_potato);
 
 #else
    pthread_cond_signal(&cond->cond);
@@ -820,69 +810,73 @@ bool scond_wait_timeout(scond_t *cond, slock_t *lock, int64_t timeout_us)
    /* How to convert a microsecond (us) timeout to millisecond (ms)?
     *
     * Someone asking for a 0 timeout clearly wants immediate timeout.
-    * Someone asking for a 1 timeout clearly wants an actual timeout 
+    * Someone asking for a 1 timeout clearly wants an actual timeout
     * of the minimum length */
-
-   /* Someone asking for 1000 or 1001 timeout shouldn't 
-    * accidentally get 2ms. */
-   DWORD dwMilliseconds = timeout_us/1000;
-
    /* The implementation of a 0 timeout here with pthreads is sketchy.
     * It isn't clear what happens if pthread_cond_timedwait is called with NOW.
-    * Moreover, it is possible that this thread gets pre-empted after the 
+    * Moreover, it is possible that this thread gets pre-empted after the
     * clock_gettime but before the pthread_cond_timedwait.
-    * In order to help smoke out problems caused by this strange usage, 
+    * In order to help smoke out problems caused by this strange usage,
     * let's treat a 0 timeout as always timing out.
     */
    if (timeout_us == 0)
       return false;
    else if (timeout_us < 1000)
-      dwMilliseconds = 1;
-
-   return _scond_wait_win32(cond,lock,dwMilliseconds);
+      return _scond_wait_win32(cond, lock, 1);
+   /* Someone asking for 1000 or 1001 timeout shouldn't
+    * accidentally get 2ms. */
+   return _scond_wait_win32(cond, lock, timeout_us / 1000);
 #else
-   int ret;
    int64_t seconds, remainder;
-   struct timespec now = {0};
-
+   struct timespec now;
 #ifdef __MACH__
    /* OSX doesn't have clock_gettime. */
    clock_serv_t cclock;
    mach_timespec_t mts;
-
    host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
    clock_get_time(cclock, &mts);
    mach_port_deallocate(mach_task_self(), cclock);
    now.tv_sec = mts.tv_sec;
    now.tv_nsec = mts.tv_nsec;
-#elif defined(__CELLOS_LV2__)
+#elif !defined(__PSL1GHT__) && defined(__PS3__)
    sys_time_sec_t s;
    sys_time_nsec_t n;
-
    sys_time_get_current_time(&s, &n);
-   now.tv_sec  = s;
-   now.tv_nsec = n;
-#elif defined(__mips__) || defined(VITA)
+   now.tv_sec            = s;
+   now.tv_nsec           = n;
+#elif defined(PS2)
+   int tickms            = ps2_clock();
+   now.tv_sec            = tickms / 1000;
+   now.tv_nsec           = tickms * 1000;
+#elif !defined(DINGUX_BETA) && (defined(__mips__) || defined(VITA) || defined(_3DS))
    struct timeval tm;
-
    gettimeofday(&tm, NULL);
-   now.tv_sec = tm.tv_sec;
-   now.tv_nsec = tm.tv_usec * 1000;
+   now.tv_sec            = tm.tv_sec;
+   now.tv_nsec           = tm.tv_usec * 1000;
 #elif defined(RETRO_WIN32_USE_PTHREADS)
    _ftime64_s(&now);
-#elif !defined(GEKKO)
-   /* timeout on libogc is duration, not end time. */
+#elif defined(GEKKO)
+   /* Avoid gettimeofday due to it being reported to be broken */
+   const uint64_t tickms = gettime() / TB_TIMER_CLOCK;
+   now.tv_sec            = tickms / 1000;
+   now.tv_nsec           = tickms * 1000;
+#else
    clock_gettime(CLOCK_REALTIME, &now);
 #endif
 
-   seconds      = timeout_us / INT64_C(1000000);
-   remainder    = timeout_us % INT64_C(1000000);
+   seconds              = timeout_us / INT64_C(1000000);
+   remainder            = timeout_us % INT64_C(1000000);
 
-   now.tv_sec  += seconds;
-   now.tv_nsec += remainder * INT64_C(1000);
+   now.tv_sec          += seconds;
+   now.tv_nsec         += remainder * INT64_C(1000);
 
-   ret = pthread_cond_timedwait(&cond->cond, &lock->lock, &now);
-   return (ret == 0);
+   if (now.tv_nsec > 1000000000)
+   {
+      now.tv_nsec      -= 1000000000;
+      now.tv_sec       += 1;
+   }
+
+   return (pthread_cond_timedwait(&cond->cond, &lock->lock, &now) == 0);
 #endif
 }
 
@@ -923,3 +917,19 @@ bool sthread_tls_set(sthread_tls_t *tls, const void *data)
 #endif
 }
 #endif
+
+uintptr_t sthread_get_thread_id(sthread_t *thread)
+{
+   if (thread)
+      return (uintptr_t)thread->id;
+   return 0;
+}
+
+uintptr_t sthread_get_current_thread_id(void)
+{
+#ifdef USE_WIN32_THREADS
+   return (uintptr_t)GetCurrentThreadId();
+#else
+   return (uintptr_t)pthread_self();
+#endif
+}

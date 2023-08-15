@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2017 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (rbmp.h).
@@ -31,13 +31,11 @@ RETRO_BEGIN_DECLS
 
 enum rbmp_source_type
 {
-   RBMP_SOURCE_TYPE_DONT_CARE = 0,
-   RBMP_SOURCE_TYPE_BGR24 = 1,
-   RBMP_SOURCE_TYPE_XRGB888 = 2,
-   RBMP_SOURCE_TYPE_RGB565 = 3,
-   RBMP_SOURCE_TYPE_ARGB8888 = 4,
-   RBMP_SOURCE_TYPE_FORMATMASK = 7,
-   RBMP_SOURCE_TYPE_YFLIPPED = 16
+   RBMP_SOURCE_TYPE_DONT_CARE,
+   RBMP_SOURCE_TYPE_BGR24,
+   RBMP_SOURCE_TYPE_XRGB888,
+   RBMP_SOURCE_TYPE_RGB565,
+   RBMP_SOURCE_TYPE_ARGB8888
 };
 
 typedef struct rbmp rbmp_t;
@@ -52,6 +50,10 @@ bool rbmp_save_image(
 
 int rbmp_process_image(rbmp_t *rbmp, void **buf,
       size_t size, unsigned *width, unsigned *height);
+
+void form_bmp_header(uint8_t *header,
+      unsigned width, unsigned height,
+      bool is32bpp);
 
 bool rbmp_set_buf_ptr(rbmp_t *rbmp, void *data);
 

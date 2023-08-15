@@ -26,7 +26,9 @@
 #include <string.h>
 #include <string>
 #include <stdarg.h>
+#ifdef HAVE_LIBZ
 #include <zlib.h>
+#endif
 #include <stdlib.h>
 #include <map>
 

@@ -71,7 +71,7 @@ static void list_files(const char *filepath, ListCallback list_callback)
 
 		if (retro_dirent_is_dir(rdir, fname) && (strcmp(fname, ".")) && strcmp(fname, ".."))
 		{
-			std::string subdir = (std::string)filepath + path_default_slash() + fname;
+			std::string subdir = (std::string)filepath + PATH_DEFAULT_SLASH() + fname;
 			list_files(subdir.c_str(), list_callback);
 			list_callback(rdir, EListCallbackArg_Pop);
 		}
@@ -132,12 +132,12 @@ static void DirectoryListCallback(RDIR* rdir, EListCallbackArg arg)
 			dataSectors++; //directories take one sector
 		}
 
-		currPath = currPath + path_default_slash() + fname;
+		currPath = currPath + PATH_DEFAULT_SLASH() + fname;
 		return;
 	}
 	else
 	{
-		std::string path = currPath + path_default_slash() + fname;
+		std::string path = currPath + PATH_DEFAULT_SLASH() + fname;
 
 		if(callbackType == eCallbackType_Build)
 		{

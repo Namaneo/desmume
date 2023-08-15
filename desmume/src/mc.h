@@ -25,6 +25,7 @@
 #include <string>
 
 #include "types.h"
+#include "streams/file_stream_transforms.h"
 
 #define MAX_SAVE_TYPES 13
 #define MC_TYPE_AUTODETECT      0x0

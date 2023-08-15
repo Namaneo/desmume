@@ -21,7 +21,7 @@
 
 #ifdef HAVE_JIT
 #if !defined(HOST_32) && !defined(HOST_64)
-#error "ERROR: JIT compiler - unsupported target platform"
+// #error "ERROR: JIT compiler - unsupported target platform"
 #endif
 
 #ifdef HOST_WINDOWS
@@ -217,7 +217,7 @@ struct ASMJIT_API StaticCodeGenerator : public Context
 		int err = mprotect(scratchpad-align, sizeof(scratchpad)+align, PROT_READ|PROT_WRITE|PROT_EXEC);
 		if(err)
 		{
-			fprintf(stderr, "mprotect failed: %s\n", strerror(errno));
+			// fprintf(stderr, "mprotect failed: %s\n", strerror(errno));
 			abort();
 		}
 	}
@@ -232,7 +232,7 @@ struct ASMJIT_API StaticCodeGenerator : public Context
 		}
 		if(size > (uintptr_t)(scratchpad+sizeof(scratchpad)-scratchptr))
 		{
-			fprintf(stderr, "Out of memory for asmjit. Clearing code cache.\n");
+			// fprintf(stderr, "Out of memory for asmjit. Clearing code cache.\n");
 			arm_jit_reset(1);
 			// If arm_jit_reset didn't involve recompiling op_cmp, we could keep the current function.
 			*dest = NULL;
@@ -4228,7 +4228,7 @@ static u32 compile_basicblock()
 	ArmOpCompiled f = (ArmOpCompiled)c.make();
 	if(c.getError())
 	{
-		fprintf(stderr, "JIT error at %s%c-%08X: %s\n", bb_thumb?"THUMB":"ARM", PROCNUM?'7':'9', start_adr, getErrorString(c.getError()));
+		// fprintf(stderr, "JIT error at %s%c-%08X: %s\n", bb_thumb?"THUMB":"ARM", PROCNUM?'7':'9', start_adr, getErrorString(c.getError()));
 		f = op_decode[PROCNUM][bb_thumb];
 	}
 #if LOG_JIT

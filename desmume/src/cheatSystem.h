@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 #include "types.h"
+#include "streams/file_stream_transforms.h"
 
 #define CHEAT_VERSION_MAJOR			2
 #define CHEAT_VERSION_MINOR			0

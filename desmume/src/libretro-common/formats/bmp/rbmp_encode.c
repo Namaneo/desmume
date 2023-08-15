@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2017 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (rbmp_encode.c).
@@ -26,15 +26,15 @@
 #include <streams/file_stream.h>
 #include <formats/rbmp.h>
 
-static bool write_header_bmp(RFILE *file, unsigned width, unsigned height, bool is32bpp)
+void form_bmp_header(uint8_t *header,
+      unsigned width, unsigned height,
+      bool is32bpp)
 {
-   uint8_t header[54];
    unsigned line_size  = (width * (is32bpp?4:3) + 3) & ~3;
    unsigned size       = line_size * height + 54;
    unsigned size_array = line_size * height;
 
    /* Generic BMP stuff. */
-
    /* signature */
    header[0] = 'B';
    header[1] = 'M';
@@ -72,7 +72,7 @@ static bool write_header_bmp(RFILE *file, unsigned width, unsigned height, bool 
    header[26] = 1;
    header[27] = 0;
    /* Bits per pixel */
-   header[28] = is32bpp?32:24;
+   header[28] = is32bpp ? 32 : 24;
    header[29] = 0;
    /* Compression method */
    header[30] = 0;
@@ -104,7 +104,12 @@ static bool write_header_bmp(RFILE *file, unsigned width, unsigned height, bool 
    header[51] = 0;
    header[52] = 0;
    header[53] = 0;
+}
 
+static bool write_header_bmp(RFILE *file, unsigned width, unsigned height, bool is32bpp)
+{
+   uint8_t header[54];
+   form_bmp_header(header, width, height, is32bpp);
    return filestream_write(file, header, sizeof(header)) == sizeof(header);
 }
 
@@ -143,9 +148,7 @@ static void dump_content(RFILE *file, const void *frame,
    int j;
    size_t line_size;
    uint8_t *line       = NULL;
-   enum rbmp_source_type format = type & RBMP_SOURCE_TYPE_FORMATMASK;
-   bool yflip = (type & RBMP_SOURCE_TYPE_YFLIPPED);
-   int bytes_per_pixel = (format==RBMP_SOURCE_TYPE_ARGB8888?4:3);
+   int bytes_per_pixel = (type==RBMP_SOURCE_TYPE_ARGB8888?4:3);
    union
    {
       const uint8_t *u8;
@@ -156,96 +159,49 @@ static void dump_content(RFILE *file, const void *frame,
    u.u8      = (const uint8_t*)frame;
    line_size = (width * bytes_per_pixel + 3) & ~3;
 
-   switch (format)
+   switch (type)
    {
       case RBMP_SOURCE_TYPE_BGR24:
          {
             /* BGR24 byte order input matches output. Can directly copy, but... need to make sure we pad it. */
             uint32_t zeros = 0;
-            int pad        = (int)(line_size-pitch);
-            if(yflip)
+            int padding    = (int)(line_size-pitch);
+            for (j = 0; j < height; j++, u.u8 += pitch)
             {
-               u.u8 += pitch * (height - 1);
-               for (j = 0; j < height; j++, u.u8 -= pitch)
-               {
-                  filestream_write(file, u.u8, pitch);
-                  if(pad != 0)
-                     filestream_write(file, &zeros, pad);
-               }
-            }
-            else
-            {
-               for(j = 0; j < height; j++, u.u8 += pitch)
-               {
-                  filestream_write(file, u.u8, pitch);
-                  if(pad != 0)
-                     filestream_write(file, &zeros, pad);
-               }
+               filestream_write(file, u.u8, pitch);
+               if (padding != 0)
+                  filestream_write(file, &zeros, padding);
             }
          }
          break;
       case RBMP_SOURCE_TYPE_ARGB8888:
          /* ARGB8888 byte order input matches output. Can directly copy. */
-         if(yflip)
-         {
-            u.u8 += pitch * (height - 1);
-            for (j = 0; j < height; j++, u.u8 -= pitch)
-               filestream_write(file, u.u8, line_size);
-         }
-         else
-         {
-            for(j = 0; j < height; j++, u.u8 += pitch)
-               filestream_write(file, u.u8, line_size);
-         }
+         for (j = 0; j < height; j++, u.u8 += pitch)
+            filestream_write(file, u.u8, line_size);
          return;
       default:
          break;
    }
 
    /* allocate line buffer, and initialize the final four bytes to zero, for deterministic padding */
-   line = (uint8_t*)malloc(line_size);
-   if (!line)
+   if (!(line = (uint8_t*)malloc(line_size)))
       return;
    *(uint32_t*)(line + line_size - 4) = 0;
 
-   switch (format)
+   switch (type)
    {
       case RBMP_SOURCE_TYPE_XRGB888:
-         if(yflip)
+         for (j = 0; j < height; j++, u.u8 += pitch)
          {
-            u.u8 += pitch * (height - 1);
-            for (j = 0; j < height; j++, u.u8 -= pitch)
-            {
-               dump_line_32_to_24(line, u.u32, width);
-               filestream_write(file, line, line_size);
-            }
-         }
-         else
-         {
-            for(j = 0; j < height; j++, u.u8 += pitch)
-            {
-               dump_line_32_to_24(line, u.u32, width);
-               filestream_write(file, line, line_size);
-            }
+            dump_line_32_to_24(line, u.u32, width);
+            filestream_write(file, line, line_size);
          }
          break;
       case RBMP_SOURCE_TYPE_RGB565:
-         if(yflip)
+         for (j = 0; j < height; j++, u.u8 += pitch)
          {
-            u.u8 += pitch * (height - 1);
-            for (j = 0; j < height; j++, u.u8 -= pitch)
-            {
-               dump_line_565_to_24(line, u.u16, width);
-               filestream_write(file, line, line_size);
-            }
-         }
-         else
-         {
-            for(j = 0; j < height; j++, u.u8 += pitch)
-            {
-               dump_line_565_to_24(line, u.u16, width);
-               filestream_write(file, line, line_size);
-            }
+            dump_line_565_to_24(line, u.u16, width);
+            filestream_write(file, line, line_size);
          }
          break;
       default:
@@ -263,11 +219,13 @@ bool rbmp_save_image(
       unsigned pitch, enum rbmp_source_type type)
 {
    bool ret    = false;
-   RFILE *file = filestream_open(filename, RFILE_MODE_WRITE, -1);
+   RFILE *file = filestream_open(filename,
+         RETRO_VFS_FILE_ACCESS_WRITE,
+         RETRO_VFS_FILE_ACCESS_HINT_NONE);
    if (!file)
       return false;
 
-   ret = write_header_bmp(file, width, height, (type&RBMP_SOURCE_TYPE_FORMATMASK)==RBMP_SOURCE_TYPE_ARGB8888);
+   ret = write_header_bmp(file, width, height, type==RBMP_SOURCE_TYPE_ARGB8888);
 
    if (ret)
       dump_content(file, frame, width, height, pitch, type);
